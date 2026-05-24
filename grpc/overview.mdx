@@ -1,0 +1,49 @@
+---
+title: 'DDDParser gRPC service: ParseVu and ParseCard RPCs'
+description: 'The DDDParser gRPC service exposes ParseVu and ParseCard RPCs for parsing tachograph DDD files, with optional statsd metrics and Consul service registration.'
+---
+
+The Tachoparser gRPC service, `DDDParser`, is defined in `pkg/proto/dddparser.proto` and implemented by the `dddserver` binary. It accepts raw DDD file bytes and returns fully decoded, structured data covering vehicle unit (VU) records and driver card records across all supported tachograph generations (first generation, second generation, and second generation v2).
+
+## Service definition
+
+The proto package is `proto` with Go package option `.;proto`. The service exposes exactly two unary RPC methods:
+
+```protobuf
+service DDDParser {
+  rpc ParseVu (ParseVuRequest) returns (ParseVuResponse) {}
+  rpc ParseCard (ParseCardRequest) returns (ParseCardResponse) {}
+}
+```
+
+## Available methods
+
+<CardGroup cols={2}>
+  <Card title="ParseVu" icon="truck" href="/grpc/parse-vu">
+    Parse raw vehicle unit DDD bytes into a structured `Vu` message containing overview, activities, events, speed data, and technical data across all tachograph generations.
+  </Card>
+  <Card title="ParseCard" icon="id-card" href="/grpc/parse-card">
+    Parse raw driver card DDD bytes into a structured `Card` message containing identification, activity records, vehicles used, events, faults, and more.
+  </Card>
+</CardGroup>
+
+## Server behaviour
+
+The server listens on port `50055` by default. You can override this with the `-listen` flag when starting `dddserver`.
+
+A **global mutex** serialises all parsing operations: only one `ParseVu` or `ParseCard` call executes at a time. Concurrent requests queue behind the lock and are processed one at a time. Design your client accordingly if you need high throughput — consider running multiple server instances behind a load balancer instead.
+
+## Optional integrations
+
+The server supports two optional integrations configured at startup:
+
+- **statsd metrics** — pass `-statsd <host:port>` to emit timing and counter metrics to a statsd-compatible server.
+- **Consul service registration** — the server uses the Hashicorp Consul API to optionally register itself for service discovery. Consul configuration is read from the environment at startup.
+
+## Proto file location
+
+The canonical proto definition lives at `pkg/proto/dddparser.proto` in the repository. To regenerate the Go bindings after modifying the proto file, run:
+
+```bash
+protoc *.proto --go_out=. --go-grpc_out=.
+```

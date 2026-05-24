@@ -1,0 +1,229 @@
+---
+title: 'ParseVu RPC: decode vehicle unit DDD files via gRPC'
+description: 'Send raw vehicle unit DDD file bytes to ParseVu and receive a fully decoded Vu message covering all tachograph generations, activities, events, and speed data.'
+---
+
+`ParseVu` accepts the raw bytes of a tachograph vehicle unit DDD file and returns a `ParseVuResponse` containing a single `Vu` message with all decoded data. The server acquires the global mutex before parsing, so only one call executes at a time.
+
+## Proto definition
+
+```protobuf
+message ParseVuRequest {
+  bytes data = 1;
+}
+
+message ParseVuResponse {
+  Vu vu = 1;
+}
+```
+
+## Request fields
+
+<ParamField body="data" type="bytes" required>
+  The raw binary content of the DDD vehicle unit file. Read the file and send its bytes directly — no base64 encoding is required when using a native gRPC client. When using `grpcurl`, encode the bytes as base64 in the JSON body.
+</ParamField>
+
+## Response fields
+
+<ResponseField name="vu" type="Vu">
+  The fully decoded vehicle unit record. All sub-fields are present for the tachograph generation(s) represented in the file; fields for other generations are empty.
+
+  <Expandable title="Vu fields">
+    <ResponseField name="vu_overview_1" type="VuOverviewFirstGen">
+      Overview block for first-generation tachographs.
+
+      <Expandable title="VuOverviewFirstGen fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified against the stored public keys.
+        </ResponseField>
+        <ResponseField name="member_state_certificate" type="CertificateFirstGen">
+          The member state certificate used to verify the VU certificate. Contains the raw certificate bytes and a decoded representation with RSA modulus, RSA exponent, certificate holder reference, certificate authority reference, and end-of-validity timestamp (Unix seconds).
+        </ResponseField>
+        <ResponseField name="vu_certificate" type="CertificateFirstGen">
+          The vehicle unit certificate. Same structure as `member_state_certificate`.
+        </ResponseField>
+        <ResponseField name="vehicle_identification_number" type="string">
+          17-character vehicle identification number (VIN).
+        </ResponseField>
+        <ResponseField name="vehicle_registration_identification" type="VehicleRegistrationIdentification">
+          Contains `vehicle_registration_nation` (numeric nation code) and `vehicle_registration_number` (decoded string).
+        </ResponseField>
+        <ResponseField name="current_date_time" type="int64">
+          Current date and time at download, as a Unix timestamp.
+        </ResponseField>
+        <ResponseField name="vu_downloadable_period" type="VuDownloadablePeriod">
+          Contains `min_downloadable_time` and `max_downloadable_time` as Unix timestamps.
+        </ResponseField>
+        <ResponseField name="card_slots_status" type="uint32">
+          Bitmask representing the status of the card slots at download time.
+        </ResponseField>
+        <ResponseField name="vu_company_locks_data" type="VuCompanyLocksDataFirstGen">
+          Company lock records. Contains `no_of_locks` and a repeated array `vu_company_locks_records`, each with `lock_in_time`, `lock_out_time`, `company_name`, `company_address`, and `company_card_number`.
+        </ResponseField>
+        <ResponseField name="vu_control_activity_data" type="VuControlActivityDataFirstGen">
+          Control activity records. Contains `no_of_controls` and a repeated array `vu_control_activity_records`, each with `control_type`, `control_time`, `control_card_number`, `download_period_begin_time`, and `download_period_end_time`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="vu_overview_2" type="VuOverviewSecondGen">
+      Overview block for second-generation tachographs. Uses record arrays instead of single values.
+
+      <Expandable title="VuOverviewSecondGen fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified.
+        </ResponseField>
+        <ResponseField name="member_state_certificate_record_array" type="MemberStateCertificateRecordArray">
+          Array of second-generation member state certificates (`CertificateSecondGen`), each with ECC public key and signature data.
+        </ResponseField>
+        <ResponseField name="vu_certificate_record_array" type="VuCertificateRecordArray">
+          Array of second-generation VU certificates.
+        </ResponseField>
+        <ResponseField name="vehicle_identification_number_record_array" type="VehicleIdentificationNumberRecordArray">
+          Array of VIN strings.
+        </ResponseField>
+        <ResponseField name="vehicle_registration_number_record_array" type="VehicleRegistrationNumberRecordArray">
+          Array of decoded vehicle registration number strings.
+        </ResponseField>
+        <ResponseField name="vu_company_locks_record_array" type="VuCompanyLocksRecordArray">
+          Company lock records (second-generation format), each entry including `FullCardNumberAndGeneration` instead of `FullCardNumber`.
+        </ResponseField>
+        <ResponseField name="vu_control_activity_record_array" type="VuControlActivityRecordArray">
+          Control activity records (second-generation format).
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="vu_overview_2_2" type="VuOverviewSecondGenV2">
+      Overview block for second-generation v2 tachographs. Identical structure to `vu_overview_2` except `vehicle_registration_number_record_array` is replaced by `vehicle_registration_identification_record_array` (typed `VehicleRegistrationIdentificationRecordArray`).
+    </ResponseField>
+
+    <ResponseField name="vu_activities_1" type="VuActivitiesFirstGen[]">
+      Repeated. One entry per day downloaded for first-generation tachographs.
+
+      <Expandable title="VuActivitiesFirstGen fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified.
+        </ResponseField>
+        <ResponseField name="time_real" type="int64">
+          Date of the activity day as a Unix timestamp.
+        </ResponseField>
+        <ResponseField name="odometer_value_midnight" type="uint32">
+          Odometer reading at midnight for this day (decoded kilometres).
+        </ResponseField>
+        <ResponseField name="vu_card_iw_data" type="VuCardIWData">
+          Card insertion/withdrawal records for the day. Contains `no_of_iw_records` and repeated `vu_card_iw_records`, each with `card_holder_name`, `full_card_number`, `card_expiry_date`, `card_insertion_time`, `vehicle_odometer_value_at_insertion`, `card_slot_number`, `card_withdrawal_time`, `vehicle_odometer_value_at_withdrawal`, `previous_vehicle_info`, and `manual_input_flag`.
+        </ResponseField>
+        <ResponseField name="vu_activity_daily_data" type="VuActivityDailyDataFirstGen">
+          Activity change records for the day. Contains `no_of_activity_changes` and repeated `activity_change_info`, each decoded into `driver` (bool), `team` (bool), `card_present` (bool), `work_type` (uint32), and `minutes` (uint32).
+        </ResponseField>
+        <ResponseField name="vu_place_daily_work_period_data" type="VuPlaceDailyWorkPeriodDataFirstGen">
+          Place records for daily work periods. Contains `no_of_place_records` and repeated `vu_place_daily_work_period_records`.
+        </ResponseField>
+        <ResponseField name="vu_specific_condition_data" type="VuSpecificConditionDataFirstGen">
+          Specific condition records. Contains `no_of_specific_condition_records` and repeated `specific_condition_records`, each with `entry_time` and `specific_condition_type`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="vu_activities_2" type="VuActivitiesSecondGen[]">
+      Repeated. One entry per day for second-generation tachographs. Uses record arrays.
+
+      <Expandable title="VuActivitiesSecondGen fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified.
+        </ResponseField>
+        <ResponseField name="date_of_day_downloaded_record_array" type="DateOfDayDownloadedRecordArray">
+          Record array containing `records` — repeated Unix timestamps, one per downloaded day.
+        </ResponseField>
+        <ResponseField name="odometer_value_midnight_record_array" type="OdometerValueMidnightRecordArray">
+          Record array containing `records` — repeated uint32 odometer readings at midnight (kilometres).
+        </ResponseField>
+        <ResponseField name="vu_card_iw_record_array" type="VuCardIWRecordArray">
+          Record array of second-generation card insertion/withdrawal records (`VuCardIWRecordSecondGen`). Each record includes `card_holder_name`, `full_card_number_and_generation`, insertion and withdrawal times, odometer values at insertion/withdrawal, `card_slot_number`, `previous_vehicle_info`, and `manual_input_flag`.
+        </ResponseField>
+        <ResponseField name="vu_activity_daily_record_array" type="VuActivityDailyRecordArray">
+          Record array of decoded `ActivityChangeInfo` entries for the day.
+        </ResponseField>
+        <ResponseField name="vu_place_daily_work_period_record_array" type="VuPlaceDailyWorkPeriodRecordArray">
+          Record array of second-generation place records, each including a `GNSSPlaceRecord` with timestamp, GNSS accuracy, and decoded latitude/longitude coordinates.
+        </ResponseField>
+        <ResponseField name="vu_gnss_ad_record_array" type="VuGNSSADRecordArray">
+          GNSS accumulated driving record array. Each `VuGNSSADRecord` includes `time_stamp`, `card_number_and_gen_driver_slot`, `card_number_and_gen_codriver_slot`, `gnss_place_record`, and `vehicle_odometer_value`.
+        </ResponseField>
+        <ResponseField name="vu_specific_condition_record_array" type="VuSpecificConditionRecordArray">
+          Specific condition records for the day.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="vu_activities_2_2" type="VuActivitiesSecondGenV2[]">
+      Repeated. Second-generation v2 activity blocks. Same structure as `vu_activities_2` with additions: `vu_place_daily_work_period_record_array` uses authenticated GNSS place records (`GNSSPlaceAuthRecord`), `vu_gnss_ad_record_array` returns `VuGNSSADRecordV2` records, plus additional `vu_border_crossing_record_array` and `vu_load_unload_record_array` fields.
+    </ResponseField>
+
+    <ResponseField name="vu_events_and_faults_1" type="VuEventsAndFaultsFirstGen[]">
+      Repeated. Events and faults blocks for first-generation tachographs. Each entry contains `vu_fault_data`, `vu_event_data`, `vu_over_speeding_control_data`, `vu_over_speeding_event_data`, and `vu_time_adjustment_data`.
+    </ResponseField>
+
+    <ResponseField name="vu_events_and_faults_2" type="VuEventsAndFaultsSecondGen[]">
+      Repeated. Events and faults blocks for second-generation tachographs using record arrays.
+    </ResponseField>
+
+    <ResponseField name="vu_events_and_faults_2_2" type="VuEventsAndFaultsSecondGenV2[]">
+      Repeated. Events and faults blocks for second-generation v2 tachographs.
+    </ResponseField>
+
+    <ResponseField name="vu_detailed_speed_1" type="VuDetailedSpeedFirstGen[]">
+      Repeated. Detailed speed blocks for first-generation tachographs. Each block contains 60-second speed measurements (`speeds_per_second` bytes) with a `speed_block_begin_date` timestamp.
+    </ResponseField>
+
+    <ResponseField name="vu_detailed_speed_2" type="VuDetailedSpeedSecondGen[]">
+      Repeated. Detailed speed blocks for second-generation tachographs using a record array.
+    </ResponseField>
+
+    <ResponseField name="vu_technical_data_1" type="VuTechnicalDataFirstGen[]">
+      Repeated. Technical data blocks for first-generation tachographs. Each entry contains `vu_identification` (manufacturer, part number, serial number, software version), `sensor_paired`, and `vu_calibration_data`.
+    </ResponseField>
+
+    <ResponseField name="vu_technical_data_2" type="VuTechnicalDataSecondGen[]">
+      Repeated. Technical data blocks for second-generation tachographs using record arrays.
+    </ResponseField>
+
+    <ResponseField name="vu_technical_data_2_2" type="VuTechnicalDataSecondGenV2[]">
+      Repeated. Technical data blocks for second-generation v2 tachographs.
+    </ResponseField>
+
+    <ResponseField name="vu_download_interface_version" type="VuDownloadInterfaceVersion">
+      Contains `verified` and `download_interface_version` (2-byte identifier).
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Usage examples
+
+**Using dddclient**
+
+```bash
+cat tachodata.ddd | ./dddclient -addr localhost:50055 -vu
+```
+
+The client outputs the parsed `Vu` message as JSON to stdout.
+
+**Using grpcurl**
+
+Encode the DDD file as base64, then pass it in the JSON body:
+
+```bash
+grpcurl -plaintext \
+  -d "{\"data\": \"$(base64 -w 0 tachodata.ddd)\"}" \
+  localhost:50055 proto.DDDParser/ParseVu
+```
+
+**Using grpcurl with a file**
+
+```bash
+grpcurl -plaintext \
+  -d @ \
+  localhost:50055 proto.DDDParser/ParseVu \
+  <<< "{\"data\": \"$(base64 -w 0 tachodata.ddd)\"}"
+```

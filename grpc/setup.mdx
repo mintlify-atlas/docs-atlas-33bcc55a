@@ -1,0 +1,111 @@
+---
+title: 'Build, configure, and connect to the dddserver gRPC'
+description: 'Build dddserver from source, start it on your chosen port with optional statsd metrics, then connect using dddclient or any gRPC client with the proto file.'
+---
+
+The `dddserver` binary starts a gRPC server that accepts `ParseVu` and `ParseCard` requests. This page walks through building the binary, starting the server, and connecting a client.
+
+<Note>
+  The server uses a **global mutex**: only one parsing operation runs at a time. Concurrent requests are queued. If you need parallel throughput, run multiple `dddserver` instances behind a load balancer.
+</Note>
+
+## Server flags
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-listen` | `:50055` | TCP address the gRPC server binds to |
+| `-statsd` | _(empty)_ | Address of a statsd server for metrics (e.g. `localhost:8125`) |
+
+## Setup workflow
+
+<Steps>
+  <Step title="Build dddserver">
+    Change into the `cmd/dddserver` directory and build the binary:
+
+    ```bash
+    cd cmd/dddserver
+    go build .
+    ```
+
+    Alternatively, run the project-level build script from the repository root to build all binaries at once:
+
+    ```bash
+    ./build-binaries-prod.sh
+    ```
+  </Step>
+
+  <Step title="Start the server">
+    <Tabs>
+      <Tab title="Run directly">
+        Start with the default port:
+
+        ```bash
+        ./dddserver
+        ```
+
+        To bind to a different address or port, use the `-listen` flag:
+
+        ```bash
+        ./dddserver -listen :50056
+        ```
+
+        To enable statsd metrics reporting, add the `-statsd` flag:
+
+        ```bash
+        ./dddserver -listen :50055 -statsd localhost:8125
+        ```
+      </Tab>
+      <Tab title="Run with Docker">
+        The repository includes a `Dockerfile` that builds an image containing only the `dddserver` binary. See the [Docker deployment guide](/guides/docker) for full instructions.
+
+        ```bash
+        docker build -t tachoparser-server .
+        docker run -p 50055:50055 tachoparser-server
+        ```
+
+        Pass flags via the Docker `CMD` override if you need to customise the listen address or statsd target:
+
+        ```bash
+        docker run -p 50056:50056 tachoparser-server \
+          ./dddserver -listen :50056 -statsd host.docker.internal:8125
+        ```
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="Connect a client">
+    You can connect to the server using the bundled `dddclient` binary or any gRPC client that has access to the proto definition.
+
+    **Using dddclient**
+
+    Build the client binary from `cmd/dddclient`:
+
+    ```bash
+    cd cmd/dddclient
+    go build .
+    ```
+
+    Then pipe a DDD file to `dddclient`. Pass `-vu` for vehicle unit data or `-card` for driver card data:
+
+    ```bash
+    cat tachodata.ddd | ./dddclient -addr localhost:50055 -vu
+    cat drivercard.ddd | ./dddclient -addr localhost:50055 -card
+    ```
+
+    The client prints the parsed result as JSON to stdout.
+
+    **Using a custom gRPC client**
+
+    Point any gRPC client library at `localhost:50055` using the proto definition at `pkg/proto/dddparser.proto`. The connection is plaintext (no TLS). See [ParseVu](/grpc/parse-vu) and [ParseCard](/grpc/parse-card) for request and response field details.
+  </Step>
+</Steps>
+
+## Regenerating protobuf bindings
+
+If you modify `dddparser.proto`, regenerate the Go bindings from inside the `pkg/proto` directory:
+
+```bash
+protoc *.proto --go_out=. --go-grpc_out=.
+```
+
+This requires `protoc`, `protoc-gen-go`, and `protoc-gen-go-grpc` to be installed.

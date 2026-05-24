@@ -1,0 +1,71 @@
+{
+  "projectType": "cli-tool",
+  "projectName": "Tachoparser",
+  "projectDescription": "A Go-based CLI tool and gRPC service that parses and verifies tachograph data files (DDD format) from vehicle units and driver cards, supporting 1st generation, 2nd generation, and 2nd generation v2 formats.",
+  "theme": "aspen",
+  "primaryColor": "#f47c24",
+  "lightColor": "#040404",
+  "darkColor": "#ffffff",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": ["introduction", "quickstart", "installation"]
+          },
+          {
+            "group": "Usage",
+            "pages": ["usage/dddparser", "usage/dddsimple", "usage/dddserver", "usage/dddui"]
+          },
+          {
+            "group": "Guides",
+            "pages": ["guides/public-keys", "guides/docker", "guides/batch-processing", "guides/output-format"]
+          },
+          {
+            "group": "Reference",
+            "pages": ["reference/tachograph-formats", "reference/data-structures", "reference/signature-verification"]
+          }
+        ]
+      },
+      {
+        "tab": "gRPC API",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": ["grpc/overview", "grpc/setup"]
+          },
+          {
+            "group": "Methods",
+            "pages": ["grpc/parse-vu", "grpc/parse-card"]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Parse 1st generation, 2nd generation, and 2nd generation v2 tachograph files",
+    "Support for both vehicle unit (VU) and driver card data",
+    "Cryptographic signature verification using EU ERCA public key certificates",
+    "JSON output for easy downstream processing",
+    "gRPC server (dddserver) for microservice deployments",
+    "Simplified parser (dddsimple) for quick identification extraction",
+    "Basic GUI (dddui) for desktop use",
+    "Docker support for containerized deployments",
+    "Batch processing of multiple files via input-list"
+  ],
+  "publicApiSurface": [
+    "dddparser -vu / -card (parse full tachograph data to JSON)",
+    "dddsimple [-card] (extract identification numbers and driver names)",
+    "dddserver [-listen <addr>] (gRPC server on port 50055)",
+    "dddclient (gRPC client)",
+    "dddui (desktop GUI for file selection and parsing)",
+    "decoder.UnmarshalTLV(data []byte, inter interface{}) (verified bool, err error)",
+    "decoder.UnmarshalTV(data []byte, inter interface{}) (verified bool, err error)",
+    "decoder.Card struct (driver card data)",
+    "decoder.Vu struct (vehicle unit data)",
+    "gRPC DDDParser.ParseVu(ParseVuRequest) ParseVuResponse",
+    "gRPC DDDParser.ParseCard(ParseCardRequest) ParseCardResponse"
+  ]
+}

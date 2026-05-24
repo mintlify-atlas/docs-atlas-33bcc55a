@@ -1,0 +1,102 @@
+---
+title: "How Tachoparser verifies tachograph data signatures"
+description: "Understand the two-pass RSA and ECDSA verification process, the ERCA certificate chain, PKsFirstGen and PKsSecondGen maps, and what verified:false means."
+---
+
+Tachoparser verifies the authenticity of every signed data block in a tachograph file as part of the normal parsing pass. The outcome of each verification is recorded in the `verified` boolean field on the corresponding data block. This page explains the full verification flow, the certificate chain involved, and what it means when `verified` is `false`.
+
+## Algorithms by generation
+
+The two tachograph generations use different cryptographic algorithms:
+
+- **1st generation (Digital Tachograph)** — RSA signatures with SHA-1. Certificates are fixed-size 194-byte structures. The RSA modulus is 1024 bits; the exponent is 64 bits. All keys are stored as parsed `DecodedCertificateFirstGen` entries in the `PKsFirstGen` map.
+
+- **2nd generation (Smart Tachograph)** — ECDSA signatures on brainpool elliptic curves, provided by the [go-crypto brainpool](https://github.com/keybase/go-crypto) package. The specific curve — and therefore the hash function — is determined by the certificate's public key size:
+
+  | Curve | Hash | Key size |
+  |---|---|---|
+  | brainpoolP256r1 | SHA-256 | 32 bytes |
+  | brainpoolP384r1 | SHA-384 | 48 bytes |
+  | brainpoolP512r1 | SHA-512 | 64 bytes |
+
+  Second-generation certificates are variable-length (204–341 bytes) and stored as `DecodedCertificateSecondGen` entries in the `PKsSecondGen` map.
+
+## The certificate chain
+
+Both generations follow a three-level certificate hierarchy rooted at the ERCA (European Root Certification Authority):
+
+```
+ERCA root
+  └── Member state certificate  (one per EU member state)
+        └── VU or card certificate  (one per device)
+              └── Data block signatures
+```
+
+Each level's certificate is signed by the level above. During verification, Tachoparser walks this chain from the embedded device certificate up to the pre-loaded ERCA root.
+
+## The `PKsFirstGen` and `PKsSecondGen` maps
+
+At startup, `internal/pkg/certificates` loads all compiled-in certificate files and populates two package-level maps in the `decoder` package:
+
+- `decoder.PKsFirstGen` — keyed by `uint64` certificate holder reference; values are `DecodedCertificateFirstGen`.
+- `decoder.PKsSecondGen` — keyed by `uint64` certificate holder reference; values are `DecodedCertificateSecondGen`.
+
+The `dddparser` binary logs the count of loaded keys at startup:
+
+```text
+loaded certificates: 42 38
+```
+
+The first number is the count of 1st-gen keys; the second is the count of 2nd-gen keys.
+
+<Note>
+The certificate files are compiled into the binary at build time using Go's `//go:embed` directive in `internal/pkg/certificates/certificates.go`. No external files are read at runtime unless a `pks1/` or `pks2/` directory exists in the current working directory, in which case those files take precedence ("live mode").
+</Note>
+
+## Verification flow
+
+<Steps>
+  <Step title="Parse all data blocks (first pass)">
+    `UnmarshalTLV` (for card data) or `UnmarshalTV` (for VU data) iterates over the binary input. Each data block — identified by a tag byte ending in `0x00` or `0x02` for TLV, or matched by a 2-byte TV tag for VU — is decoded into its Go struct and its byte range (start offset and length) is recorded in an internal map keyed by tag.
+  </Step>
+
+  <Step title="Extract signing certificates from the parsed data">
+    After the first pass, the decoder calls `SignCertificateFirstGen()` and `SignCertificateSecondGen()` on the top-level struct. These methods:
+
+    - Decode the member state certificate and the VU/card certificate embedded in the file.
+    - Register any newly seen certificates into `PKsFirstGen` / `PKsSecondGen` so that subsequent files in a batch can benefit from previously seen member state keys.
+    - Return the device-level certificate that will be used to verify data block signatures.
+  </Step>
+
+  <Step title="Verify each signature (second pass)">
+    The decoder iterates the input a second time, now looking for signature blocks (tag byte ending in `0x01` or `0x03` for TLV). For each signature block found:
+
+    1. The corresponding data block's byte range is looked up from the map built in step 1.
+    2. For 1st-gen: `SignatureFirstGen.Verify()` runs RSA PKCS#1 v1.5 verify with SHA-1 over the data bytes using the device certificate's public key.
+    3. For 2nd-gen: `SignatureSecondGen.Verify()` runs ECDSA verify over the data bytes using the brainpool public key extracted from the certificate chain.
+    4. The boolean result is written to the `Verified` field of the data block struct via reflection.
+  </Step>
+
+  <Step title="Propagate the verified field to JSON output">
+    The `verified` field is tagged with `json:"verified"` (and `aper:"-"` to exclude it from ASN.1 encoding). When the struct is marshalled to JSON by `dddparser`, every block that was successfully verified will carry `"verified": true`; all others carry `"verified": false`.
+  </Step>
+</Steps>
+
+## The `verified` field in practice
+
+`verified` is set independently on each data block. A file can have some blocks with `"verified": true` and others with `"verified": false` — for example, if it contains both 1st-gen and 2nd-gen sections and only one generation's keys are loaded.
+
+<Warning>
+If `verified` is `false` on a data block, the integrity of that block's contents cannot be guaranteed. The decoded fields are present and readable, but they may have been tampered with or corrupted in transit. Do not rely on `"verified": false` data for compliance or audit purposes.
+</Warning>
+
+## Behavior without keys
+
+When no certificate files are present in `internal/pkg/certificates/pks1/` or `pks2/`, the embedded certificate directory is empty and `PKsFirstGen` and `PKsSecondGen` contain no entries. In this case:
+
+- `dddparser` logs: `loaded certificates: 0 0`
+- Parsing completes normally for both card and VU data.
+- All data blocks are decoded and appear in the JSON output.
+- Every `verified` field is `false` because the certificate chain cannot be validated without the root key.
+
+See the [public key certificate guide](/guides/public-keys) for instructions on downloading and installing the ERCA certificates.

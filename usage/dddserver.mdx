@@ -1,0 +1,74 @@
+---
+title: "dddserver: gRPC server for tachograph file parsing"
+description: "Start dddserver to expose tachograph parsing over gRPC on port 50055, with optional statsd metrics reporting and Consul service registration support."
+---
+
+`dddserver` wraps the `dddparser` decoding logic behind a gRPC interface, allowing remote clients to send raw DDD bytes over the network and receive structured protobuf responses. It is the right choice when you need to call tachograph parsing from a service rather than from a shell script, or when you want to centralise parsing in a Docker container.
+
+See [gRPC API overview](/grpc/overview) for the full service definition and available RPC methods.
+
+## Flags
+
+<ParamField path="-listen" type="string" default=":50055">
+  TCP address to listen on. Use the standard `host:port` format. To listen on all interfaces on a specific port, omit the host (e.g. `:50056`). Defaults to `:50055`.
+</ParamField>
+
+<ParamField path="-statsd" type="string">
+  Address of a statsd-compatible server (e.g. `localhost:8125`). When set, `dddserver` emits timing and counter metrics. If not set, no metrics are emitted.
+</ParamField>
+
+## Examples
+
+Start the server on the default port:
+
+```bash
+./dddserver
+```
+
+Start the server on a custom port:
+
+```bash
+./dddserver -listen :50056
+```
+
+Start the server with statsd metrics:
+
+```bash
+./dddserver -statsd localhost:8125
+```
+
+Start the server on a custom port with statsd metrics:
+
+```bash
+./dddserver -listen :50056 -statsd localhost:8125
+```
+
+## Concurrency
+
+`dddserver` uses a **global mutex** to serialise all parsing operations. Only one `ParseVu` or `ParseCard` RPC call executes at a time; concurrent requests queue behind the lock. If you need higher throughput, run multiple `dddserver` instances behind a load balancer rather than relying on a single instance to serve concurrent requests.
+
+## Consul service registration
+
+`dddserver` can register itself with a Consul agent at startup and deregister on shutdown. Service registration is triggered by the `CONSUL_ADDR` environment variable. When set, the server registers under the service name `tachoparser` (overridable with `CONSUL_SERVICE_NAME`) and registers a TCP health check on the listen address with a 60-second interval.
+
+| Environment variable    | Description                                         |
+| ----------------------- | --------------------------------------------------- |
+| `CONSUL_ADDR`           | Consul agent address (e.g. `127.0.0.1:8500`). Registration is skipped if unset. |
+| `CONSUL_SERVICE_NAME`   | Service name to register. Defaults to `tachoparser`. |
+| `CONSUL_SCHEME`         | HTTP scheme for the Consul API. Defaults to `http`. |
+| `CONSUL_DATACENTER`     | Consul datacenter. Uses Consul default if unset.    |
+
+The server generates a random service ID suffix (e.g. `tachoparser-a1b2c3d4`) to distinguish multiple instances running in the same Consul catalogue.
+
+<Note>
+  Consul registration is entirely optional. If `CONSUL_ADDR` is not set, the server starts normally without attempting to contact Consul.
+</Note>
+
+## Running in Docker
+
+The Dockerfile in the repository root produces an image containing only the `dddserver` binary. To start the server in a container and expose the default port:
+
+```bash
+docker build -t dddserver .
+docker run -p 50055:50055 dddserver
+```

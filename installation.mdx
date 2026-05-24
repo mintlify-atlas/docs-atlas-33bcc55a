@@ -1,0 +1,108 @@
+---
+title: "Build and install Tachoparser from source or Docker"
+description: "Build Tachoparser from source with Go 1.19+, copy binaries to your PATH, or run the gRPC server as a minimal scratch Docker container."
+---
+
+Tachoparser is distributed as source code and must be compiled before use. The build process is straightforward: vendor the Go dependencies and run `go build` in the relevant `cmd/` subdirectory. A shell script is provided to build all five executables in one step. You can also run the gRPC server as a Docker container without installing Go at all.
+
+<Note>
+  Tachoparser requires **Go 1.19 or later**. Check your version with `go version` before building.
+</Note>
+
+## Prerequisites
+
+- Go 1.19+ installed and available on your `PATH`
+- Python 3 with `requests` and `lxml` packages (only needed to run the public key download scripts)
+- Git to clone the repository
+
+## Building
+
+<Tabs>
+  <Tab title="Build all binaries">
+    The `build-binaries-prod.sh` script handles the full build: it runs the public key download scripts, vendors Go dependencies, and compiles all five executables.
+
+    <Steps>
+      <Step title="Clone the repository">
+        ```bash
+        git clone https://github.com/traconiq/tachoparser.git
+        cd tachoparser
+        ```
+      </Step>
+      <Step title="Run the build script">
+        ```bash
+        ./build-binaries-prod.sh
+        ```
+
+        This produces binaries at:
+        - `cmd/dddparser/dddparser`
+        - `cmd/dddsimple/dddsimple`
+        - `cmd/dddserver/dddserver`
+        - `cmd/dddclient/dddclient`
+        - `cmd/dddui/dddui`
+      </Step>
+    </Steps>
+  </Tab>
+
+  <Tab title="Build individual binary">
+    If you only need one executable, vendor the dependencies first and then build the specific `cmd/` subdirectory.
+
+    <Steps>
+      <Step title="Vendor dependencies">
+        Run this once from the repository root:
+
+        ```bash
+        go mod vendor
+        ```
+      </Step>
+      <Step title="Build the binary">
+        Change into the subdirectory for the executable you want and run `go build`:
+
+        ```bash
+        cd cmd/dddparser
+        go build .
+        ```
+
+        Replace `dddparser` with `dddsimple`, `dddserver`, `dddclient`, or `dddui` as needed.
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Installing to PATH
+
+After building, copy the binary to a directory on your `PATH` to use it without specifying the full path.
+
+```bash
+sudo cp cmd/dddparser/dddparser /usr/local/bin
+```
+
+Verify the installation:
+
+```bash
+dddparser -vu < /dev/null
+```
+
+## External dependencies
+
+Tachoparser aims to keep external dependencies minimal. The following packages are used:
+
+| Package | Purpose |
+|---------|---------|
+| [keybase/go-crypto](https://github.com/keybase/go-crypto) | Brainpool elliptic curve definitions for 2nd gen signature verification |
+| [golang.org/x/text](https://golang.org/x/text) | ISO 8859 and KOI8 character set mappings for driver names |
+| [hashicorp/consul](https://github.com/hashicorp/consul) | Service discovery support in `dddserver` |
+| [ncruces/zenity](https://github.com/ncruces/zenity) | Native file picker dialogs for `dddui` |
+| [google.golang.org/grpc](https://google.golang.org/grpc) | gRPC transport for `dddserver` and `dddclient` |
+| [google.golang.org/protobuf](https://google.golang.org/protobuf) | Protocol Buffers serialization |
+| [gopkg.in/alexcesaro/statsd.v2](https://gopkg.in/alexcesaro/statsd.v2) | Metrics reporting in `dddserver` |
+
+## Docker
+
+The repository includes a `Dockerfile` that builds and packages only the `dddserver` executable into a minimal scratch image. No Go installation is required on the host.
+
+```bash
+docker build -t tachoparser .
+docker run -p 50055:50055 tachoparser
+```
+
+See [Docker deployment](/guides/docker) for full details on configuration, port mapping, and running in production.

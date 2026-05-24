@@ -1,0 +1,86 @@
+---
+title: 'Tachoparser JSON output format: keys and filtering'
+description: 'Explore the JSON structure produced by dddparser: top-level VU and card keys, the verified signature field, pretty-printing options, and jq filter examples.'
+---
+
+`dddparser` writes JSON to stdout by default. Diagnostic messages, warnings, and errors are sent to stderr so they do not contaminate the JSON stream. You can redirect output to a file with the `-output` flag, or pipe it directly to other tools.
+
+The JSON structure closely mirrors the EU tachograph data specification. Each data block defined in the regulation corresponds to a key in the output object.
+
+## Top-level keys for VU data
+
+When parsing vehicle unit data with `-vu`, the output object may contain the following top-level keys depending on which data blocks are present in the file:
+
+| Key | Description |
+|-----|-------------|
+| `vu_overview_1` | First-generation VU overview — contains member state and VU certificates, control activity, and other overview fields |
+| `vu_overview_2` | Second-generation VU overview |
+| `vu_overview_2_v2` | Second-generation v2 VU overview |
+| `vu_activities_1` | Array of first-generation activity records |
+| `vu_activities_2` | Array of second-generation activity records |
+| `vu_activities_2_v2` | Array of second-generation v2 activity records |
+| `vu_events_and_faults_1` | First-generation events and faults |
+| `vu_events_and_faults_2` / `vu_events_and_faults_2_v2` | Second-generation events and faults |
+| `vu_detailed_speed_1` / `vu_detailed_speed_2` | Detailed speed data |
+| `vu_technical_data_1` / `vu_technical_data_2` / `vu_technical_data_2_v2` | Technical data blocks |
+
+The `verified` field on each signed block indicates whether its cryptographic signature was successfully verified against the loaded ERCA certificates.
+
+## Example output structure
+
+A trimmed example of VU JSON output:
+
+```json
+{
+  "vu_download_interface_version": "...",
+  "vu_overview_1": {
+    "verified": true,
+    "member_state_certificate": { ... },
+    "vu_certificate": { ... },
+    "vu_identification": { ... },
+    "vu_sensor_paired_records": [ ... ],
+    "vu_control_activity_data": { ... }
+  },
+  "vu_activities_1": [
+    {
+      "verified": true,
+      "vu_driver_activity_daily_records": [ ... ]
+    }
+  ]
+}
+```
+
+<Note>
+All struct fields use the `omitempty` JSON tag. Any field that is absent from the tachograph file or has a zero value will be omitted entirely from the output. The presence of a key in the output means the corresponding data block was found in the file.
+</Note>
+
+## Pretty-printing output
+
+By default, `dddparser` outputs compact JSON. Use the `-format` flag to enable indented output:
+
+```bash
+./dddparser -vu -input tachodata.ddd -format
+```
+
+Alternatively, pipe through `jq`:
+
+```bash
+cat tachodata.ddd | ./dddparser -vu | jq .
+```
+
+## Filtering with jq
+
+<Tip>
+`jq` is the most practical way to extract specific fields from Tachoparser output. Install it via your system package manager (`apt install jq`, `brew install jq`, etc.).
+</Tip>
+
+```bash
+# Check if first-generation overview signature is verified
+cat tachodata.ddd | ./dddparser -vu | jq '.vu_overview_1.verified'
+
+# List all activity record dates from first-generation data
+cat tachodata.ddd | ./dddparser -vu | jq '[.vu_activities_1[].vu_driver_activity_daily_records[].activity_daily_presence_counter]'
+
+# Pretty print and page through output
+cat tachodata.ddd | ./dddparser -vu | jq . | less
+```

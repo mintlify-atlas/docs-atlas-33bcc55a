@@ -1,0 +1,38 @@
+---
+title: "dddui: graphical desktop UI for tachograph parsing"
+description: "Run dddui to parse tachograph files through native OS file dialogs — no command-line flags needed. Requires a graphical desktop environment with zenity support."
+---
+
+`dddui` is a simple desktop front-end for `dddparser`. It uses native OS dialogs (provided by the [zenity](https://github.com/ncruces/zenity) library) to prompt you for the input DDD file, the output JSON file, and the file type (VU or driver card). No command-line flags or terminal knowledge are required — just run the binary and follow the prompts.
+
+## Usage
+
+Start the GUI by running the binary with no arguments:
+
+```bash
+./dddui
+```
+
+`dddui` does not accept any command-line flags. All configuration is handled interactively through dialog boxes.
+
+## Workflow
+
+When you launch `dddui`, it walks you through three steps using native file and selection dialogs:
+
+1. **Select input file** — a file picker dialog opens ("Datei auswählen..."). Choose the `.ddd` tachograph file you want to parse.
+2. **Select output file** — a save dialog opens ("Speichern unter..."). Choose where to write the resulting `.json` file. The default suggested filename is `out.json`.
+3. **Select file type** — a question dialog ("Handelt es sich um eine Fahrerkarte?") asks whether the input is a driver card file. Click **Ja** for driver card or **Nein** for vehicle unit data.
+
+<Note>
+  The dialog labels are in German. This matches the source implementation. The underlying parsing behavior is identical to `dddparser`.
+</Note>
+
+Once you confirm all three prompts, `dddui` runs the same full decode as `dddparser` and writes the JSON output to the file you selected.
+
+## When to use dddui
+
+`dddui` is intended for occasional, ad-hoc use on a desktop machine where you want to inspect a tachograph file without typing command-line options. For scripted workflows, batch processing, or server environments, use `dddparser` or `dddserver` instead.
+
+<Note>
+  `dddui` requires a graphical desktop environment. On headless or server systems without a display, the zenity dialogs will fail to open. Use `dddparser` in those environments.
+</Note>

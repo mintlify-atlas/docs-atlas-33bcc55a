@@ -1,0 +1,81 @@
+---
+title: "dddsimple: Quickly extract tachograph file identifiers"
+description: "Extract vehicle VIN, registration numbers, and driver names from tachograph DDD files using direct byte matching — much faster than a full dddparser decode."
+---
+
+`dddsimple` is a lightweight alternative to `dddparser` that extracts only the most commonly needed identifiers from a tachograph file: the vehicle identification number (VIN), registration number, and driver name. Rather than performing a full TLV/TV decode, it uses direct byte pattern matching against known byte sequences in the file. This makes it significantly faster and useful for tasks like generating suggested file names or quickly identifying a file without a full parse.
+
+## Flags
+
+<ParamField path="-card" type="boolean">
+  Treat the input as a driver card file. If not set, the input is assumed to be vehicle unit (VU) data. Unlike `dddparser`, this flag is optional — omitting it selects VU mode by default.
+</ParamField>
+
+<ParamField path="-input" type="string">
+  Path to the input DDD file. If not set, `dddsimple` reads from stdin.
+</ParamField>
+
+<ParamField path="-output" type="string">
+  Path to the output JSON file. If not set (or set to `-`), output is written to stdout.
+</ParamField>
+
+## Output format
+
+### VU data (default)
+
+When processing a vehicle unit file, `dddsimple` outputs a JSON object with the VIN, registration number, and a suggested file name:
+
+```json
+{
+  "IdentificationNumber": "WVWZZZ1JZ3W123456",
+  "RegistrationNumber": "AB-CD-1234",
+  "VuName": "M_%s_AB-CD-1234_WVWZZZ1JZ3W123456.DDD"
+}
+```
+
+`VuName` is a suggested file name for the downloaded DDD file. The `%s` placeholder is left for a timestamp or download date to be filled in by the caller.
+
+### Card data (`-card`)
+
+When processing a driver card, `dddsimple` outputs the card number, driver's first and last name, and a suggested file name:
+
+```json
+{
+  "CardNumber": "DEF1234567890123",
+  "FirstName": "Max",
+  "LastName": "Mustermann",
+  "CardName": "C_%s_M_Mustermann_DEF1234567890123.DDD"
+}
+```
+
+`CardName` follows the pattern `C_%s_<initial>_<surname>_<card_number>.DDD`. The `%s` placeholder serves the same purpose as in `VuName`.
+
+## Examples
+
+Extract VIN and registration from a VU file via stdin:
+
+```bash
+cat tachodata.ddd | ./dddsimple
+```
+
+Extract card number and driver name from a driver card file:
+
+```bash
+cat drivercard.ddd | ./dddsimple -card
+```
+
+Read from a file and write the result to a file:
+
+```bash
+./dddsimple -input tachodata.ddd -output identifiers.json
+```
+
+## How it works
+
+`dddsimple` locates known binary tags (such as the overview block tag `0x76 0x01` for first generation, `0x76 0x21` for second generation, and `0x76 0x31` for second generation v2) and reads the identification and registration bytes at fixed offsets relative to those tags. For driver cards it walks the TLV structure looking for the card identification tag and extracts the card number and holder name fields from fixed byte positions within the record.
+
+Non-printable characters are replaced with underscores in all output strings. Registration numbers are decoded using the ISO 8859 code page byte embedded in the tachograph record.
+
+<Note>
+  Because `dddsimple` relies on byte matching rather than a full decode, it may not find all fields in unusual or malformed files. If `dddsimple` returns an error, use `dddparser` for a full parse.
+</Note>

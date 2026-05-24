@@ -1,0 +1,50 @@
+---
+title: 'Containerize Tachoparser: deploy dddserver via Docker'
+description: 'Build and deploy the Tachoparser gRPC server as a minimal scratch-based Docker image with ERCA certificates embedded at build time via a multi-stage build.'
+---
+
+The provided Dockerfile packages the `dddserver` gRPC endpoint into a minimal container image. Certificate downloading, binary compilation, and final image assembly are handled in a single `docker build` command — no manual setup is required.
+
+The build uses three stages:
+
+1. **Python stage** — runs `dl_all_pks1.py` and `dl_all_pks2.py` to download all ERCA public key certificates into the `internal/pkg/certificates/` tree.
+2. **Go stage** — compiles `dddparser`, `dddserver`, and `dddclient` against the downloaded certificates.
+3. **Scratch stage** — copies only the `dddserver` binary and the minimum required system libraries into a near-empty final image.
+
+<Steps>
+  <Step title="Build the image">
+    Run the following from the repository root:
+
+    ```bash
+    docker build -t tachoparser .
+    ```
+
+    The Python certificate download runs during the build. An active internet connection is required.
+  </Step>
+  <Step title="Run the container">
+    Start the gRPC server on the default port 50055:
+
+    ```bash
+    docker run -p 50055:50055 tachoparser
+    ```
+
+    The server is now reachable at `localhost:50055`.
+  </Step>
+  <Step title="Change the listening port (optional)">
+    To expose the server on a different host port, remap it with `-p` and pass the `-listen` flag to override the container-side port:
+
+    ```bash
+    docker run -p 50056:50055 tachoparser /dddserver -listen :50055
+    ```
+  </Step>
+</Steps>
+
+<Warning>
+The final image is based on `scratch` — it contains no package manager, no shell utilities beyond a minimal `dash`, and no debugging tools. If you need to inspect the container at runtime, attach a sidecar or build a separate debug image.
+</Warning>
+
+<Note>
+The Docker image contains only `dddserver`. If you need to use the `dddparser` or `dddsimple` command-line tools, build them locally and run them directly rather than through Docker.
+</Note>
+
+Certificates are embedded into the image at build time. If ERCA publishes new certificates after the image is built, you must rebuild the image to pick them up.

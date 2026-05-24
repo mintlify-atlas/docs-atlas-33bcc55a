@@ -1,0 +1,90 @@
+---
+title: "dddparser: Full tachograph and driver card file parser"
+description: "Parse raw tachograph DDD files into complete, structured JSON output — supports VU data and driver cards across all tachograph generations."
+---
+
+`dddparser` is the primary command-line tool for decoding tachograph data. It reads raw DDD bytes from a file or stdin, performs full TLV/TV decoding including signature verification, and writes structured JSON to a file or stdout. It supports all tachograph generations: first generation, second generation, and second generation v2.
+
+## Flags
+
+<ParamField path="-vu" type="boolean">
+  Treat the input as a vehicle unit (VU) file. Mutually exclusive with `-card`. One of `-vu` or `-card` must be set.
+</ParamField>
+
+<ParamField path="-card" type="boolean">
+  Treat the input as a driver card file. Mutually exclusive with `-vu`. One of `-card` or `-vu` must be set.
+</ParamField>
+
+<ParamField path="-input" type="string">
+  Path to the input DDD file. If not set, `dddparser` reads from stdin. Mutually exclusive with `-input-list`.
+</ParamField>
+
+<ParamField path="-output" type="string">
+  Path to the output JSON file. If not set (or set to `-`), output is written to stdout.
+</ParamField>
+
+<ParamField path="-input-list" type="string">
+  Path to a newline-separated list of input files to process in batch mode. Each file is decoded and written to a `.json` file in the same directory as the source file. Mutually exclusive with `-input`.
+</ParamField>
+
+<ParamField path="-format" type="boolean">
+  Pretty-print the JSON output with two-space indentation. Has no effect in batch mode (`-input-list`).
+</ParamField>
+
+<Note>
+  `-card` and `-vu` are mutually exclusive — exactly one must be provided. Passing both, or neither, causes the program to exit with an error. Similarly, `-input` and `-input-list` are mutually exclusive.
+</Note>
+
+## Examples
+
+Parse a vehicle unit file piped through stdin:
+
+```bash
+cat tachodata.ddd | ./dddparser -vu
+```
+
+Parse a driver card file piped through stdin:
+
+```bash
+cat drivercard.ddd | ./dddparser -card
+```
+
+Parse from a named input file and write to a named output file:
+
+```bash
+./dddparser -vu -input tachodata.ddd -output result.json
+```
+
+Pretty-print JSON output for inspection:
+
+```bash
+cat tachodata.ddd | ./dddparser -vu -format
+```
+
+Pipe output into `jq` for further filtering:
+
+```bash
+cat tachodata.ddd | ./dddparser -vu | jq '.vu_overview_1.vehicle_identification_number'
+```
+
+Process multiple files in batch mode using a file list:
+
+```bash
+./dddparser -vu -input-list files.txt
+```
+
+The file `files.txt` should contain one file path per line:
+
+```text
+/data/tacho/vehicle1.ddd
+/data/tacho/vehicle2.ddd
+/data/tacho/vehicle3.ddd
+```
+
+Each input file produces a corresponding `.json` file in the same directory (e.g. `vehicle1.ddd.json`).
+
+## Output
+
+JSON is written to stdout (or to the file specified with `-output`). Warnings and errors are written to stderr, so you can safely pipe stdout to other tools without mixing error messages into the data stream.
+
+For VU data the top-level JSON object contains fields such as `vu_overview_1`, `vu_overview_2`, `vu_overview_2_v2`, `vu_activities_1`, `vu_events_and_faults_1`, `vu_detailed_speed_1`, and `vu_technical_data_1` (plus `_2` and `_2_v2` variants for second generation). For card data the structure includes `card_identification_and_driver_card_holder_identification_1`, `card_driver_activity_1`, `card_vehicles_used_1`, and similar fields. See [Understanding JSON output](/guides/output-format) for the full key reference.

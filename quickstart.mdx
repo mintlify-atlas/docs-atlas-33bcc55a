@@ -1,81 +1,99 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
-icon: 'rocket'
+title: "Quickstart: parse your first EU tachograph DDD file"
+description: "Clone the repo, download ERCA certificates, build Tachoparser, and parse your first VU or driver card DDD file into JSON — all in six steps."
 ---
 
-## Get started in three steps
+Tachoparser turns raw binary tachograph data into structured JSON with a single command. This guide walks you from a fresh clone to a working parse of both a vehicle unit file and a driver card file.
 
-Get your documentation site running locally and make your first customization.
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone https://github.com/traconiq/tachoparser.git
+    cd tachoparser
+    ```
+  </Step>
 
-### Step 1: Set up your local environment
+  <Step title="Download EU public key certificates">
+    Tachoparser verifies cryptographic signatures in tachograph data using official EU ERCA certificates. Without them, parsing still works — signatures just won't be verified.
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    cd scripts/pks1
+    ./dl_all_pks1.py
+    cd ../pks2
+    ./dl_all_pks2.py
+    cd ../..
+    ```
 
-### Step 2: Deploy your changes
+    <Tip>
+      See [Download EU tachograph public key certificates](/guides/public-keys) for manual download instructions and details on what the certificates are used for.
+    </Tip>
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+  <Step title="Build all executables">
+    From the repository root, run the build script. You'll need Go 1.19 or later installed.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```bash
+    ./build-binaries-prod.sh
+    ```
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+    This builds five executables: `dddparser`, `dddsimple`, `dddserver`, `dddclient`, and `dddui`. Each is placed in its corresponding `cmd/` subdirectory.
 
-### Step 3: Go live
+    <Note>
+      If you only need a specific tool, you can build it individually. See [Installation](/installation) for per-binary build instructions.
+    </Note>
+  </Step>
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+  <Step title="Parse a vehicle unit file">
+    The `dddparser` binary reads raw data from stdin and writes JSON to stdout. Pass `-vu` for vehicle unit data:
 
-## Next steps
+    ```bash
+    cat tachodata.ddd | ./cmd/dddparser/dddparser -vu
+    ```
 
-Now that you have your docs running, explore these key features:
+    Errors and warnings go to stderr, so you can safely pipe the JSON without interference.
+  </Step>
+
+  <Step title="Parse a driver card file">
+    Use `-card` instead of `-vu` for driver card data:
+
+    ```bash
+    cat drivercard.ddd | ./cmd/dddparser/dddparser -card
+    ```
+
+    <Note>
+      `-card` and `-vu` are mutually exclusive — you must specify exactly one.
+    </Note>
+  </Step>
+
+  <Step title="Pretty-print and explore the output">
+    The output is compact JSON by default. Use the `-format` flag for indented output, or pipe through [jq](https://stedolan.github.io/jq/) for interactive exploration:
+
+    ```bash
+    # Built-in pretty-printing
+    cat tachodata.ddd | ./cmd/dddparser/dddparser -vu -format
+
+    # jq for interactive exploration
+    cat tachodata.ddd | ./cmd/dddparser/dddparser -vu | jq . | less
+
+    # Extract a specific field
+    cat tachodata.ddd | ./cmd/dddparser/dddparser -vu | jq '.vu_overview_first_gen'
+    ```
+  </Step>
+</Steps>
+
+## What's next
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="dddparser reference" icon="terminal" href="/usage/dddparser">
+    All flags for the main parser, including file I/O and batch mode
+  </Card>
+  <Card title="dddsimple" icon="bolt" href="/usage/dddsimple">
+    Quickly extract identification numbers and driver names without full parsing
+  </Card>
+  <Card title="Output format" icon="file-code" href="/guides/output-format">
+    Understand the JSON structure and how to work with parsed data
+  </Card>
+  <Card title="gRPC server" icon="server" href="/grpc/overview">
+    Deploy Tachoparser as a microservice with the dddserver gRPC API
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

@@ -1,0 +1,312 @@
+---
+title: "Card and Vu JSON fields: tachograph data reference"
+description: "Complete reference for the Card and Vu struct JSON field names output by dddparser, organized by section with example JSON snippets and TLV tag values."
+---
+
+Tachoparser decodes tachograph data into two top-level Go structs: `Card` for driver card files and `Vu` for vehicle unit files. Both are serialised to JSON by the `dddparser` tool. This page documents the major fields exposed in that JSON output, grouped by section. Each data block also carries a `verified` boolean that reflects whether its cryptographic signature passed validation.
+
+## The `verified` field
+
+Every data block that carries a signature — overview blocks, activity arrays, events, faults, technical data — has a `verified` field in the JSON output. It is set to `true` only when all of the following conditions are met:
+
+1. The relevant public keys were loaded at startup (via `internal/pkg/certificates`).
+2. The certificate chain embedded in the file (ERCA root → member state → VU/card) decoded successfully.
+3. The block's signature verified against its certificate and the block's raw bytes.
+
+If any condition fails, `verified` remains `false`. Parsing itself still succeeds — only the `verified` field is affected.
+
+## Card data (`-card`)
+
+Driver card files use TLV encoding. The `Card` struct holds every TLV-encoded section. Fields for the same logical section come in pairs: a `_1` variant for 1st-generation data and a `_2` variant for 2nd-generation data. Both variants may be present in the same file.
+
+<AccordionGroup>
+  <Accordion title="card_icc_identification — ICC chip identification">
+    Identifies the integrated circuit chip on the card. Present as `card_icc_identification_1` (TLV tag `0x000200`) for 1st-generation data and `card_icc_identification_2` (tag `0x000202`) for 2nd-generation data.
+
+    ```json
+    {
+      "card_icc_identification_1": {
+        "verified": true,
+        "clock_stop": 0,
+        "card_extended_serial_number": { ... },
+        "card_approval_number": "...",
+        "card_personaliser_id": 0,
+        "embedder_ic_assembler_id": "...",
+        "ic_identifier": "..."
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="card_chip_identification — chip serial number">
+    Contains the chip's unique serial number and related identification bytes. Available as `card_chip_identification_1` (tag `0x000500`) and `card_chip_identification_2` (tag `0x000502`).
+
+    ```json
+    {
+      "card_chip_identification_1": {
+        "verified": true,
+        "ic_serial_number": "...",
+        "ic_manufacturing_references": "..."
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="driver_card_application_identification — application metadata">
+    Records the tachograph application type, version, and capacity parameters (for example, the maximum number of activity records the card can store). Available as `driver_card_application_identification_1` (tag `0x050100`) and `driver_card_application_identification_2` (tag `0x050102`). A v2-specific variant is also present as `driver_card_application_identification_v2` (tag `0x052502`).
+
+    ```json
+    {
+      "driver_card_application_identification_1": {
+        "verified": true,
+        "type_of_tachograph_card_id": 1,
+        "card_structure_version": "...",
+        "no_of_events_per_type": 6,
+        "no_of_faults_per_type": 12,
+        "activity_structure_length": 5548,
+        "no_of_card_vehicle_records": 84,
+        "no_of_card_place_records": 84
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="card_event_data — recorded events">
+    Lists driving events such as power supply interruptions, motion sensor errors, over-speeding, and continuous driving violations. Available as `card_event_data_1` (tag `0x050200`) and `card_event_data_2` (tag `0x050202`).
+
+    ```json
+    {
+      "card_event_data_1": {
+        "verified": true,
+        "card_event_records": [
+          {
+            "event_type": 1,
+            "event_begin_time": "2023-04-01T07:12:00Z",
+            "event_end_time": "2023-04-01T07:14:00Z",
+            "similar_events_number": 0
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="card_fault_data — fault records">
+    Records equipment faults detected by the tachograph. Available as `card_fault_data_1` (tag `0x050300`) and `card_fault_data_2` (tag `0x050302`).
+
+    ```json
+    {
+      "card_fault_data_1": {
+        "verified": true,
+        "card_fault_records": [
+          {
+            "fault_type": 64,
+            "fault_begin_time": "2023-01-15T09:00:00Z",
+            "fault_end_time": "2023-01-15T09:05:00Z"
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="card_driver_activity — daily activity data">
+    Contains the driver's raw activity byte stream, which encodes the sequence of activity changes (driving, work, availability, rest) with minute-resolution timestamps. Available as `card_driver_activity_1` (tag `0x050400`) and `card_driver_activity_2` (tag `0x050402`).
+
+    ```json
+    {
+      "card_driver_activity_1": {
+        "verified": true,
+        "activity_pointer_oldest_day_record": 0,
+        "activity_pointer_newest_record": 2784,
+        "activity_daily_records": [
+          {
+            "activity_previous_record_length": 0,
+            "activity_record_length": 56,
+            "activity_record_date": "2023-04-01",
+            "activity_daily_presence_counter": 1,
+            "activity_distance": 342,
+            "activity_change_infos": [ ... ]
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="card_vehicles_used — vehicles used records">
+    Lists the vehicles the driver operated, including VIN, registration number, odometer readings, and the time period the card was inserted. Available as `card_vehicles_used_1` (tag `0x050500`) and `card_vehicles_used_2` (tag `0x050502`).
+
+    ```json
+    {
+      "card_vehicles_used_1": {
+        "verified": true,
+        "vehicle_pointer_newest_record": 3,
+        "card_vehicle_records": [
+          {
+            "vehicle_odometer_begin": 123456,
+            "vehicle_odometer_end": 124100,
+            "vehicle_first_use": "2023-04-01T06:00:00Z",
+            "vehicle_last_use": "2023-04-01T18:30:00Z",
+            "vehicle_registration": { ... }
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="card_place_daily_work_period — place records">
+    Records the geographic location at the start and end of each daily work period, as entered by the driver. Available as `card_place_daily_work_period_1` (tag `0x050600`) and `card_place_daily_work_period_2` (tag `0x050602`).
+
+    ```json
+    {
+      "card_place_daily_work_period_1": {
+        "verified": true,
+        "place_pointer_newest_record": 5,
+        "card_place_daily_work_period_records": [
+          {
+            "place_pointer_type_of_entry": 1,
+            "entry_time": "2023-04-01T06:00:00Z",
+            "entry_type_daily_work_period": 0,
+            "entry_nation": 22,
+            "entry_region": 0
+          }
+        ]
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="card_identification_and_driver_card_holder_identification — driver identity">
+    Contains the card number, issuing member state, card validity dates, and the driver's name and birth date. This is the primary identification section. Available as `card_identification_and_driver_card_holder_identification_1` (tag `0x052000`) and `card_identification_and_driver_card_holder_identification_2` (tag `0x052002`).
+
+    ```json
+    {
+      "card_identification_and_driver_card_holder_identification_1": {
+        "verified": true,
+        "card_identification": {
+          "card_issuing_member_state": 22,
+          "card_number": "DE000123456789",
+          "card_issuing_authority_name": "...",
+          "card_issue_date": "2020-01-15",
+          "card_validity_begin": "2020-01-15",
+          "card_expiry_date": "2025-01-14"
+        },
+        "driver_card_holder_identification": {
+          "card_holder_name": {
+            "holder_surname": "Mustermann",
+            "holder_first_names": "Max"
+          },
+          "card_holder_birth_date": "1980-06-12"
+        }
+      }
+    }
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## VU data (`-vu`)
+
+Vehicle unit files use TV encoding. The `Vu` struct holds one overview block per generation (at most) and multiple activity, events, faults, detailed speed, and technical data blocks. Multiple blocks of the same type are common in real data.
+
+<AccordionGroup>
+  <Accordion title="vu_overview_1 — 1st gen overview">
+    The first-generation overview block (TV tag `0x7601`) is the anchor for all 1st-gen signature verification. It embeds the `MemberStateCertificate` and `VuCertificate` at fixed offsets at the start of the block, followed by vehicle identification, downloadable period, card slot status, download activity data, company locks, and control activity data.
+
+    ```json
+    {
+      "vu_overview_1": {
+        "verified": true,
+        "member_state_certificate": { ... },
+        "vu_certificate": { ... },
+        "vehicle_identification_number": { "vehicle_identification_number": "WBA12345678901234" },
+        "vehicle_registration_identification": { ... },
+        "current_date_time": "2023-04-01T18:30:00Z",
+        "vu_downloadable_period": { "min_downloadable_time": "...", "max_downloadable_time": "..." },
+        "card_slots_status": { ... },
+        "vu_download_activity_data": { ... },
+        "vu_company_locks_data": { ... },
+        "vu_control_activity_data": { ... }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="vu_overview_2 / vu_overview_2_v2 — 2nd gen overviews">
+    The second-generation overview (TV tag `0x7621`) and its v2 variant (TV tag `0x7631`) serve the same anchoring role for 2nd-gen signature verification. Certificates are stored in record arrays (`MemberStateCertificateRecordArray`, `VuCertificateRecordArray`) rather than at fixed offsets.
+
+    ```json
+    {
+      "vu_overview_2": {
+        "verified": true,
+        "member_state_certificate_record_array": { "records": [ { ... } ] },
+        "vu_certificate_record_array": { "records": [ { ... } ] },
+        "vu_identification_record_array": { ... },
+        "vu_downloadable_period_record_array": { ... },
+        "vu_card_iw_record_array": { ... },
+        "vu_company_locks_record_array": { ... },
+        "vu_control_activity_record_array": { ... },
+        "sensor_paired_record_array": { ... }
+      }
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="vu_activities_1 — 1st gen activity blocks">
+    An array of 1st-gen daily activity blocks (TV tag `0x7602`). Each element covers one calendar day and contains the driver slot, co-driver slot, and the raw activity change byte stream.
+
+    ```json
+    {
+      "vu_activities_1": [
+        {
+          "verified": true,
+          "time_real": "2023-04-01T00:00:00Z",
+          "odometer_value_midnight": 123456,
+          "vu_card_iw_data": { ... },
+          "vu_activity_daily_data": "...",
+          "vu_distance": { ... }
+        }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="vu_activities_2 — 2nd gen activity blocks">
+    An array of 2nd-gen daily activity blocks (TV tag `0x7622`). The structure uses record arrays for driver, co-driver, and vehicle periods rather than the fixed-layout approach of the 1st generation.
+
+    ```json
+    {
+      "vu_activities_2": [
+        {
+          "verified": true,
+          "vu_gnss_ad_record_array": { ... },
+          "vu_activity_daily_record_array": { ... },
+          "vu_place_daily_work_period_record_array": { ... },
+          "vu_gnss_place_auth_record_array": { ... }
+        }
+      ]
+    }
+    ```
+  </Accordion>
+
+  <Accordion title="vu_activities_2_v2 — 2nd gen v2 activity blocks">
+    An array of 2nd-gen v2 daily activity blocks (TV tag `0x7632`). Extends the 2nd-gen structure with GPS-authenticated accumulated driving records, border crossing records, and load/unload records.
+
+    ```json
+    {
+      "vu_activities_2_v2": [
+        {
+          "verified": true,
+          "vu_gnss_ad_record_array": { ... },
+          "vu_activity_daily_record_array": { ... },
+          "vu_place_daily_work_period_record_array": { ... },
+          "vu_gnss_place_auth_record_array": { ... },
+          "vu_border_crossing_record_array": { ... },
+          "vu_load_unload_record_array": { ... }
+        }
+      ]
+    }
+    ```
+  </Accordion>
+</AccordionGroup>

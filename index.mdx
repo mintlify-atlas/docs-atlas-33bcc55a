@@ -1,133 +1,72 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
-icon: 'star'
+title: "Tachoparser: EU tachograph file parser and verifier"
+description: "Tachoparser decodes EU tachograph DDD files from vehicle units and driver cards into structured JSON, with built-in cryptographic signature verification."
 ---
 
-## Setting up
+Tachoparser is an open-source Go toolkit for parsing and verifying digital tachograph data files (DDD format) as specified by EU regulations. It supports 1st generation (digital tachograph), 2nd generation (smart tachograph), and 2nd generation v2 formats for both vehicle unit (VU) and driver card data. Output is structured JSON, ready for downstream analysis or integration.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Parse your first tachograph file in minutes with the dddparser CLI
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Installation" icon="download" href="/installation">
+    Build from source or run with Docker — all setup options covered
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="CLI Reference" icon="terminal" href="/usage/dddparser">
+    Full flag reference for dddparser, dddsimple, dddserver, and dddui
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="gRPC API" icon="plug" href="/grpc/overview">
+    Integrate tachograph parsing as a microservice with the gRPC server
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What Tachoparser does
 
-Everything you need to create world-class documentation.
+Tachoparser reads raw binary tachograph data from files or stdin and outputs fully decoded JSON. It handles the complex binary TLV/TV encoding used by EU-regulated tachograph devices, including cryptographic signature verification against official ERCA public key certificates.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
+<CardGroup cols={2}>
+  <Card title="Vehicle Unit data" icon="truck" href="/usage/dddparser">
+    Parse complete VU datasets including activities, events, faults, and GPS records
   </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
+  <Card title="Driver card data" icon="id-card" href="/usage/dddparser">
+    Decode driver card files with activity history, place records, and holder identity
   </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
+  <Card title="Signature verification" icon="shield-check" href="/reference/signature-verification">
+    Verify data integrity using EU ERCA root and member state certificates
   </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
+  <Card title="Docker deployment" icon="docker" href="/guides/docker">
+    Run dddserver as a containerized gRPC service with the official Dockerfile
   </Card>
-</Columns>
+</CardGroup>
 
-## Make your content agent ready
+## How it works
 
-Make your docs work for humans and AI agents alike.
+<Steps>
+  <Step title="Download public key certificates">
+    Obtain EU ERCA root CA and member state certificates using the provided Python download scripts, or download them manually from the JRC Digital Tachograph portal.
+  </Step>
+  <Step title="Build the executables">
+    Run `./build-binaries-prod.sh` from the repository root to compile all five executables: `dddparser`, `dddsimple`, `dddserver`, `dddclient`, and `dddui`.
+  </Step>
+  <Step title="Parse a tachograph file">
+    Pipe a DDD file to `dddparser` with the `-vu` or `-card` flag and receive structured JSON on stdout.
+    ```bash
+    cat tachodata.ddd | dddparser -vu | jq .
+    ```
+  </Step>
+  <Step title="Verify signatures">
+    When public key certificates are present, Tachoparser automatically verifies cryptographic signatures and reports a `verified` status on each data block.
+  </Step>
+</Steps>
 
-<Columns cols={2}>
-  <Card
-    title="Prompt component"
-    icon="robot"
-    href="/agent-ready/prompt"
-  >
-    Embed shareable AI prompts readers can copy or open in Cursor.
-  </Card>
-  <Card
-    title="Visibility"
-    icon="eye"
-    href="/agent-ready/visibility"
-  >
-    Show different content to humans and agents reading your docs.
-  </Card>
-  <Card
-    title="Contextual menu"
-    icon="bolt"
-    href="/agent-ready/contextual"
-  >
-    Give readers one-click access to Claude, ChatGPT, Cursor, and more.
-  </Card>
-  <Card
-    title="AI coding tools"
-    icon="wand-magic-sparkles"
-    href="/ai-tools/claude-code"
-  >
-    Set up Claude Code, Cursor, or Windsurf with Mintlify's skill.
-  </Card>
-</Columns>
+## Supported formats
 
-## Need inspiration?
+| Format | Generation | VU Data | Driver Card |
+|--------|-----------|---------|-------------|
+| Digital Tachograph | 1st gen | ✓ | ✓ |
+| Smart Tachograph | 2nd gen | ✓ | ✓ |
+| Smart Tachograph v2 | 2nd gen v2 | ✓ | ✓ |
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<Note>
+Tachoparser is based on the EU regulatory specifications defined in Commission Implementing Regulation (EU) 2016/799 and its amendments. Data structures are extracted directly from the official annexes.
+</Note>

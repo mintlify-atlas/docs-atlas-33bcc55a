@@ -1,0 +1,96 @@
+---
+title: "DDD file format: tachograph generations and encoding"
+description: "Understand the EU DDD file format: three tachograph generations with their tag schemes, TLV vs TV encoding for cards and VUs, and file naming conventions."
+---
+
+Tachograph data files — commonly called DDD files — are binary downloads from a vehicle unit (VU) or a driver smart card. Each file contains structured activity records along with cryptographic signatures that allow the data's authenticity to be verified against EU certificate authorities. Tachoparser reads these files from standard input and produces a JSON representation of every decoded field.
+
+## Regulatory background
+
+The recording and download requirements for digital tachographs are defined in two EU legislative instruments:
+
+- [Regulation (EU) No 165/2014](https://eur-lex.europa.eu/eli/reg/2014/165/oj) — sets the overarching requirements for tachograph construction, installation, and operation.
+- [Commission Implementing Regulation (EU) 2016/799](http://data.europa.eu/eli/reg_impl/2016/799/2020-02-26) — the technical annex (consolidated 2020-02-26) that specifies exact data formats, tag numbering, field lengths, and signature schemes.
+
+<Info>
+The Joint Research Centre Digital Tachograph portal at [https://dtc.jrc.ec.europa.eu/](https://dtc.jrc.ec.europa.eu/) provides the authoritative certificate downloads and supplementary technical documentation from the European Commission.
+</Info>
+
+## Three tachograph generations
+
+The EU has introduced successive generations of tachograph hardware. Each generation uses a distinct set of TLV tag suffixes and a different cryptographic algorithm, but a single DDD file may contain data blocks from more than one generation simultaneously.
+
+| Generation | Common name | Tag suffix (data / signature) | Signature algorithm | Notes |
+|---|---|---|---|---|
+| 1st generation | Digital Tachograph (DT) | `0x00` / `0x01` | RSA with SHA-1 | Deployed from 2005 |
+| 2nd generation | Smart Tachograph (ST) | `0x02` / `0x03` | ECDSA on brainpool curves | Deployed from 2019 |
+| 2nd generation v2 | Smart Tachograph v2 | `0x32` / `0x33` | ECDSA on brainpool curves | Adds GPS authentication, border crossing and load/unload records |
+
+### 1st generation — Digital Tachograph
+
+First-generation tachographs use RSA signatures with SHA-1. Tags are 3 bytes long; the third byte is `0x00` for data blocks and `0x01` for the matching signature block. Certificates are fixed-size 194-byte structures. The two embedded certificates — `MemberStateCertificate` and `VuCertificate` — appear at fixed offsets at the start of the overview block and are used to anchor the certificate chain back to the ERCA root.
+
+### 2nd generation — Smart Tachograph
+
+Second-generation tachographs switch to ECDSA signatures using brainpool elliptic curves (brainpoolP256r1, brainpoolP384r1, or brainpoolP521r1) paired with SHA-256, SHA-384, or SHA-512 respectively. Data blocks carry the third tag byte `0x02`; their signatures carry `0x03`. Certificate structures are variable-length.
+
+### 2nd generation v2 — enhanced Smart Tachograph
+
+Version 2 extends the second generation with GPS-authenticated position records, border crossing records, and load/unload records. Its tag suffixes are `0x32` (data) and `0x33` (signature). The same ECDSA brainpool algorithm family is used.
+
+## Two encoding schemes
+
+The binary encoding differs between vehicle unit downloads and driver card downloads.
+
+### TV encoding — vehicle unit data
+
+VU data uses **Tag–Value** (TV) encoding defined in Appendix 7, section 2.2.6 of the implementing regulation. Tags are 2 bytes and values follow with a variable-length payload. There is no explicit length field in the outer wrapper; the payload size is read from a record-type-specific inner structure. Each top-level TV block maps to one field of the `Vu` Go struct.
+
+```text
+┌──────────┬────────────────────────────┐
+│ Tag (2 B)│ Payload (variable)         │
+└──────────┴────────────────────────────┘
+```
+
+Example TV tags used by Tachoparser:
+
+```text
+0x7601  vu_overview_1       (1st gen overview)
+0x7621  vu_overview_2       (2nd gen overview)
+0x7631  vu_overview_2_v2    (2nd gen v2 overview)
+0x7602  vu_activities_1[]   (1st gen activity blocks)
+0x7622  vu_activities_2[]   (2nd gen activity blocks)
+```
+
+### TLV encoding — driver card data
+
+Driver card data uses **Tag–Length–Value** (TLV) encoding defined in Appendix 2, sections 4.1 and 4.2.1. Tags are 3 bytes, followed by a 2-byte big-endian length, followed by the payload. The 3-byte tag encodes both the file identifier (first 2 bytes) and the generation/type indicator (third byte).
+
+```text
+┌──────────────┬────────────┬────────────────────────┐
+│ Tag (3 B)    │ Length (2 B│ Payload (Length bytes) │
+└──────────────┴────────────┴────────────────────────┘
+```
+
+The third byte of a TLV tag determines what kind of block it is:
+
+| Third byte | Meaning |
+|---|---|
+| `0x00` | 1st gen data |
+| `0x01` | 1st gen signature |
+| `0x02` | 2nd gen data |
+| `0x03` | 2nd gen signature |
+| `0x32` | 2nd gen v2 data |
+| `0x33` | 2nd gen v2 signature |
+
+## File naming conventions
+
+The `dddsimple` tool outputs a suggested file name alongside the extracted identifiers. The naming pattern follows a conventional format:
+
+- **Vehicle unit files**: `M_%s_<RegNr>_<VIN>.DDD`  
+  Where `<RegNr>` is the vehicle registration number and `<VIN>` is the vehicle identification number. The `%s` placeholder is left for the caller to substitute (for example, a timestamp).
+
+- **Driver card files**: `C_%s_<DriverName>_<CardNr>.DDD`  
+  Where `<DriverName>` is derived from the first initial and surname found in `CardIdentificationAndDriverCardHolderIdentification`, and `<CardNr>` is the card number.
+
+Non-printable characters in both names are replaced with underscores.

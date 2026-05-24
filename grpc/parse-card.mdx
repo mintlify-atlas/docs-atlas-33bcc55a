@@ -1,0 +1,223 @@
+---
+title: 'ParseCard RPC: decode driver card DDD files via gRPC'
+description: 'Send raw driver card DDD file bytes to ParseCard and receive a fully decoded Card message with identification, activity, vehicle, event, and fault records.'
+---
+
+`ParseCard` accepts the raw bytes of a tachograph driver card DDD file and returns a `ParseCardResponse` containing a single `Card` message with all decoded data. The server acquires the global mutex before parsing, so only one call executes at a time.
+
+## Proto definition
+
+```protobuf
+message ParseCardRequest {
+  bytes data = 1;
+}
+
+message ParseCardResponse {
+  Card card = 1;
+}
+```
+
+## Request fields
+
+<ParamField body="data" type="bytes" required>
+  The raw binary content of the DDD driver card file. Read the file and pass its bytes directly — no base64 encoding is required when using a native gRPC client. When using `grpcurl`, encode the bytes as base64 in the JSON body.
+</ParamField>
+
+## Response fields
+
+<ResponseField name="card" type="Card">
+  The fully decoded driver card record. Fields for both first-generation (`_1`) and second-generation (`_2`) blocks are present; fields for the non-applicable generation will be empty.
+
+  <Expandable title="Card identification fields">
+    <ResponseField name="card_identification_and_driver_card_holder_identification_1" type="CardIdentificationAndDriverCardHolderIdentification">
+      Card identification and holder identity for first-generation cards.
+
+      <Expandable title="CardIdentificationAndDriverCardHolderIdentification fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified against the stored public keys.
+        </ResponseField>
+        <ResponseField name="card_identification" type="CardIdentification">
+          Contains `card_issuing_member_state` (numeric nation code), `card_number` (16-character decoded string), `card_issuing_authority_name`, `card_issue_date`, `card_validity_begin`, and `card_expiry_date` — all timestamps as Unix seconds.
+        </ResponseField>
+        <ResponseField name="driver_card_holder_identification" type="DriverCardHolderIdentification">
+          Contains `card_holder_name` (with `holder_surname` and `holder_first_names`), `card_holder_birth_date` (year/month/day as uint32), and `card_holder_preferred_language`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="card_identification_and_driver_card_holder_identification_2" type="CardIdentificationAndDriverCardHolderIdentification">
+      Same structure as `_1`, for second-generation cards. Accompanied by a second-generation signature (`card_identification_and_driver_card_holder_identification_2_sig`).
+    </ResponseField>
+  </Expandable>
+
+  <Expandable title="Driver activity fields">
+    <ResponseField name="card_driver_activity_1" type="CardDriverActivityFirstGen">
+      Activity records for first-generation cards.
+
+      <Expandable title="CardDriverActivityFirstGen fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified.
+        </ResponseField>
+        <ResponseField name="activity_pointer_oldest_day_record" type="uint32">
+          Offset pointer to the oldest day record within the activity buffer.
+        </ResponseField>
+        <ResponseField name="activity_pointer_newest_record" type="uint32">
+          Offset pointer to the newest record within the activity buffer.
+        </ResponseField>
+        <ResponseField name="decoded_activity_daily_records" type="CardActivityDailyRecord[]">
+          Repeated. Each record contains `activity_record_date` (Unix timestamp), `activity_daily_presence_counter`, `activity_day_distance` (km), and repeated `activity_change_info` entries — each decoded into `driver` (bool), `team` (bool), `card_present` (bool), `work_type` (uint32), and `minutes` (uint32).
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="card_driver_activity_2" type="CardDriverActivitySecondGen">
+      Same structure as `card_driver_activity_1`, for second-generation cards.
+    </ResponseField>
+  </Expandable>
+
+  <Expandable title="Vehicles used fields">
+    <ResponseField name="card_vehicles_used_1" type="CardVehiclesUsedFirstGen">
+      Vehicles used records for first-generation cards.
+
+      <Expandable title="CardVehiclesUsedFirstGen fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified.
+        </ResponseField>
+        <ResponseField name="vehicle_pointer_newest_record" type="uint32">
+          Index of the most recent vehicle record.
+        </ResponseField>
+        <ResponseField name="card_vehicle_records" type="CardVehicleRecordFirstGen[]">
+          Repeated. Each record contains `vehicle_odometer_begin`, `vehicle_odometer_end` (decoded km), `vehicle_first_use`, `vehicle_last_use` (Unix timestamps), `vehicle_registration` (`VehicleRegistrationIdentification`), and `vu_data_block_counter`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="card_vehicles_used_2" type="CardVehiclesUsedSecondGen">
+      Same structure as `_1` for second-generation cards, with one additional field per record: `vehicle_identification_number` (decoded VIN string).
+    </ResponseField>
+  </Expandable>
+
+  <Expandable title="Event data fields">
+    <ResponseField name="card_event_data_1" type="CardEventDataFirstGen">
+      Event records for first-generation cards.
+
+      <Expandable title="CardEventDataFirstGen fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified.
+        </ResponseField>
+        <ResponseField name="card_event_records_array" type="CardEventRecordsArrayElement[]">
+          Repeated array of event type buckets (6 buckets for first-generation cards). Each bucket contains repeated `card_event_records`, where each record has `event_type` (uint32), `event_begin_time`, `event_end_time` (Unix timestamps), and `event_vehicle_registration`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="card_event_data_2" type="CardEventDataSecondGen">
+      Same structure as `_1` for second-generation cards, with 11 event type buckets instead of 6.
+    </ResponseField>
+  </Expandable>
+
+  <Expandable title="Fault data fields">
+    <ResponseField name="card_fault_data_1" type="CardFaultDataFirstGen">
+      Fault records for first-generation cards.
+
+      <Expandable title="CardFaultDataFirstGen fields">
+        <ResponseField name="verified" type="boolean">
+          Whether the block's signature was verified.
+        </ResponseField>
+        <ResponseField name="card_fault_records_array" type="CardFaultRecordsArrayElement[]">
+          Repeated array of fault type buckets (2 buckets). Each bucket contains repeated `card_fault_records`, where each record has `fault_type` (uint32), `fault_begin_time`, `fault_end_time` (Unix timestamps), and `fault_vehicle_registration`.
+        </ResponseField>
+      </Expandable>
+    </ResponseField>
+
+    <ResponseField name="card_fault_data_2" type="CardFaultDataSecondGen">
+      Same structure as `_1` for second-generation cards.
+    </ResponseField>
+  </Expandable>
+
+  <Expandable title="Additional card fields">
+    <ResponseField name="card_icc_identification_1" type="CardIccIdentificationFirstGen">
+      ICC identification for first-generation cards. Contains `clock_stop`, `card_extended_serial_number`, `card_approval_number`, `card_personaliser_id`, `embedder_ic_assembler_id`, and `ic_identifier`.
+    </ResponseField>
+    <ResponseField name="card_icc_identification_2" type="CardIccIdentificationSecondGen">
+      ICC identification for second-generation cards. Same structure as `_1` but with a `ExtendedSerialNumberSecondGen` serial number.
+    </ResponseField>
+    <ResponseField name="driver_card_application_identification_1" type="DriverCardApplicationIdentificationFirstGen">
+      Application identification for first-generation cards. Contains event/fault counts per type, activity structure length, number of vehicle and place records.
+    </ResponseField>
+    <ResponseField name="driver_card_application_identification_2" type="DriverCardApplicationIdentificationSecondGen">
+      Application identification for second-generation cards. Adds GNSS AD record count, specific condition record count, and vehicle unit record count.
+    </ResponseField>
+    <ResponseField name="card_place_daily_work_period_1" type="CardPlaceDailyWorkPeriodFirstGen">
+      Place/daily work period records for first-generation cards. Each `PlaceRecordFirstGen` contains `entry_time`, `entry_type_daily_work_period`, `daily_work_period_country`, `daily_work_period_region`, and `vehicle_odometer_value`.
+    </ResponseField>
+    <ResponseField name="card_place_daily_work_period_2" type="CardPlaceDailyWorkPeriodSecondGen">
+      Place/daily work period records for second-generation cards. Each `PlaceRecordSecondGen` adds an `entry_gnss_place_record` with GNSS coordinates.
+    </ResponseField>
+    <ResponseField name="card_vehicle_units_used" type="CardVehicleUnitsUsed">
+      Vehicle unit records from the card. Each `CardVehicleUnitRecord` contains `time_stamp`, `manufacturer_code`, `device_id`, and `vu_software_version`.
+    </ResponseField>
+    <ResponseField name="gnss_accumulated_driving" type="GNSSAccumulatedDriving">
+      GNSS accumulated driving records. Each `GNSSAccumulatedDrivingRecord` contains `time_stamp`, `gnss_place_record` (with coordinates), and `vehicle_odometer_value`.
+    </ResponseField>
+    <ResponseField name="card_border_crossings" type="CardBorderCrossings">
+      Border crossing records (second-generation v2 cards). Each `CardBorderCrossingRecord` contains `country_left`, `country_entered`, `gnss_place_auth_record`, and `vehicle_odometer_value`.
+    </ResponseField>
+    <ResponseField name="card_load_unload_operations" type="CardLoadUnloadOperations">
+      Load/unload operation records (second-generation v2 cards). Each `CardLoadUnloadRecord` contains `time_stamp`, `operation_type`, `gnss_place_auth_record`, and `vehicle_odometer_value`.
+    </ResponseField>
+    <ResponseField name="card_load_type_entries" type="CardLoadTypeEntries">
+      Load type entry records (second-generation v2 cards). Each `CardLoadTypeEntryRecord` contains `time_stamp` and `load_type_entered`.
+    </ResponseField>
+    <ResponseField name="specific_conditions_1" type="SpecificConditionsFirstGen">
+      Specific condition records for first-generation cards. Each `SpecificConditionRecord` contains `entry_time` and `specific_condition_type`.
+    </ResponseField>
+    <ResponseField name="specific_conditions_2" type="SpecificConditionsSecondGen">
+      Specific condition records for second-generation cards.
+    </ResponseField>
+    <ResponseField name="card_driving_licence_information_1" type="CardDrivingLicenceInformation">
+      Driving licence information for first-generation cards. Contains `driving_licence_issuing_authority`, `driving_licence_issuing_nation`, and `driving_licence_number`.
+    </ResponseField>
+    <ResponseField name="card_driving_licence_information_2" type="CardDrivingLicenceInformation">
+      Driving licence information for second-generation cards.
+    </ResponseField>
+    <ResponseField name="card_certificate" type="CertificateFirstGen">
+      The card's own first-generation certificate.
+    </ResponseField>
+    <ResponseField name="member_state_certificate" type="CertificateFirstGen">
+      The member state certificate for first-generation cards.
+    </ResponseField>
+    <ResponseField name="card_ma_certificate" type="CertificateSecondGen">
+      The motion sensor authority certificate for second-generation cards.
+    </ResponseField>
+    <ResponseField name="card_sign_certificate" type="CertificateSecondGen">
+      The card's signing certificate for second-generation cards.
+    </ResponseField>
+    <ResponseField name="ca_certificate" type="CertificateSecondGen">
+      The certification authority certificate for second-generation cards.
+    </ResponseField>
+    <ResponseField name="link_certificate" type="CertificateSecondGen">
+      The link certificate for cross-generation verification.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+## Usage examples
+
+**Using dddclient**
+
+```bash
+cat drivercard.ddd | ./dddclient -addr localhost:50055 -card
+```
+
+The client outputs the parsed `Card` message as JSON to stdout.
+
+**Using grpcurl**
+
+Encode the DDD file as base64, then pass it in the JSON body:
+
+```bash
+grpcurl -plaintext \
+  -d "{\"data\": \"$(base64 -w 0 drivercard.ddd)\"}" \
+  localhost:50055 proto.DDDParser/ParseCard
+```

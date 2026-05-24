@@ -1,0 +1,50 @@
+---
+title: 'Batch process multiple tachograph DDD files at once'
+description: 'Use dddparser -input-list to process dozens of tachograph files in one run, automatically writing a .json output file alongside each source DDD file.'
+---
+
+When you have a large set of tachograph files to process, running `dddparser` once per file is impractical. The `-input-list` flag accepts a plain text file containing one input path per line and processes each entry in sequence, writing a `.json` output file next to each source file automatically.
+
+<Steps>
+  <Step title="Create a file list">
+    Create a plain text file with one absolute or relative path per line:
+
+    ```text
+    /data/tacho/truck1.ddd
+    /data/tacho/truck2.ddd
+    /data/tacho/truck3.ddd
+    ```
+
+    Empty lines are ignored. You can generate this list with `find`:
+
+    ```bash
+    find /data/tacho -name "*.ddd" > files.txt
+    ```
+  </Step>
+  <Step title="Run the batch command">
+    Pass the list file to `-input-list` along with the data type flag:
+
+    ```bash
+    ./dddparser -vu -input-list files.txt
+    ```
+
+    Use `-card` instead of `-vu` for driver card data.
+  </Step>
+  <Step title="Collect the output files">
+    For each entry in the list, `dddparser` writes a JSON file at the same path with `.json` appended:
+
+    ```text
+    /data/tacho/truck1.ddd      →  /data/tacho/truck1.ddd.json
+    /data/tacho/truck2.ddd      →  /data/tacho/truck2.ddd.json
+    /data/tacho/truck3.ddd      →  /data/tacho/truck3.ddd.json
+    ```
+  </Step>
+</Steps>
+
+<Note>
+Output files are always written next to the source file using the `.json` suffix. The `-output` flag has no effect in batch mode.
+</Note>
+
+If a file cannot be read or parsed, a warning is logged to stderr and processing continues with the next file. A single bad file will not abort the entire batch.
+
+`-input-list` and `-input` are mutually exclusive. Providing both flags will cause `dddparser` to exit with an error.

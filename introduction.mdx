@@ -1,0 +1,42 @@
+---
+title: "What is Tachoparser? An open-source tachograph parser"
+description: "Tachoparser is an open-source Go toolkit that decodes and verifies EU tachograph DDD files from vehicle units and driver cards into JSON."
+---
+
+Tachoparser is a command-line toolkit written in Go for parsing and verifying digital tachograph data files. Tachographs are legally required recording devices fitted to commercial vehicles across the EU — they capture driving times, speeds, and rest periods. The raw data they produce is stored in binary DDD files that follow a tightly specified EU regulatory format. Tachoparser reads those files from stdin, decodes the binary TLV/TV structures, verifies cryptographic signatures using official ERCA certificates, and outputs structured JSON.
+
+## Supported formats
+
+Tachoparser handles all three generations of EU tachograph data for both vehicle unit (VU) and driver card files.
+
+| Format | Generation | Tag prefix | VU data | Driver card |
+|--------|------------|------------|---------|-------------|
+| Digital Tachograph | 1st gen | `0x7601` | ✓ | ✓ |
+| Smart Tachograph | 2nd gen | `0x7621` | ✓ | ✓ |
+| Smart Tachograph v2 | 2nd gen v2 | `0x7631` | ✓ | ✓ |
+
+## Executables
+
+The repository builds five executables, each serving a different use case.
+
+<CardGroup cols={2}>
+  <Card title="dddparser" icon="terminal">
+    The main CLI. Reads a DDD file from stdin (or a file path) and outputs a fully decoded JSON structure, including all activity records, events, faults, and verified signatures. Requires `-vu` or `-card` to indicate the file type.
+  </Card>
+  <Card title="dddsimple" icon="magnifying-glass">
+    A lightweight byte-matching parser that extracts only identification numbers and driver names without full decoding. Useful when you only need to identify a file quickly.
+  </Card>
+  <Card title="dddserver" icon="server">
+    A gRPC server that exposes tachograph parsing as a network service. Listens on port 50055 by default. The Docker image packages this executable exclusively.
+  </Card>
+  <Card title="dddclient" icon="plug">
+    A basic gRPC client for connecting to `dddserver`. Useful for testing the server or as a reference implementation for building your own client.
+  </Card>
+  <Card title="dddui" icon="window">
+    A minimal desktop UI built with zenity. Lets you select an input file, an output file, and the file type (VU or card) without using the command line.
+  </Card>
+</CardGroup>
+
+## License
+
+Tachoparser is released under the [GNU Affero General Public License v3.0 (AGPL-3.0)](https://www.gnu.org/licenses/agpl-3.0.html). Any modifications or derivative works must be made available under the same license.
